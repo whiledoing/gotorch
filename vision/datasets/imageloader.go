@@ -94,7 +94,7 @@ func (p *ImageLoader) Minibatch() (torch.Tensor, torch.Tensor) {
 				tensorSize = append(tensorSize, int64(v))
 			}
 			t := torch.FromBlob(unsafe.Pointer(&sample.img.Array[0]), torch.Float, tensorSize)
-			images = append(images, t)
+			images = append(images, t.Permute([]int64{2, 0, 1}))
 			labels = append(labels, int64(sample.label))
 		} else {
 			break
