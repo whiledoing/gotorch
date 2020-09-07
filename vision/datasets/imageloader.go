@@ -4,7 +4,6 @@ import (
 	"image"
 	"io"
 	"path/filepath"
-	"unsafe"
 
 	torch "github.com/wangkuiyi/gotorch"
 	tgz "github.com/wangkuiyi/gotorch/tool/tgz"
@@ -12,7 +11,7 @@ import (
 )
 
 type sample struct {
-	img   transforms.ImageFloat
+	data  interface{}
 	label int
 }
 
@@ -22,8 +21,11 @@ type ImageLoader struct {
 	vocab   map[string]int
 	samples chan sample
 	err     chan error
-	trans   *transforms.ComposeTransformer
+	trans1  *transforms.ComposeTransformer // transforms do not process Tensor
+	trans2  *transforms.ComposeTransformer // transforms process Tensor
 	mbSize  int
+	inputs  []torch.Tensor
+	labels  []int64
 }
 
 // NewImageLoader returns an ImageLoader
@@ -32,32 +34,40 @@ func NewImageLoader(fn string, vocab map[string]int, trans *transforms.ComposeTr
 	if e != nil {
 		return nil, e
 	}
+	trans1, trans2 := splitComposeByToTensor(trans)
 	m := &ImageLoader{
 		r:       r,
 		vocab:   vocab,
 		samples: make(chan sample, mbSize*4),
-		err:     make(chan error),
-		trans:   trans,
+		err:     make(chan error, 1),
+		trans1:  trans1,
+		trans2:  trans2,
 		mbSize:  mbSize,
 	}
-	go m.retreiveMinibatch()
+	go m.read()
 	return m, nil
 }
+func (p *ImageLoader) tensorGC() {
+	p.inputs = []torch.Tensor{}
+	p.labels = []int64{}
+	torch.GC()
+}
 
-// Scan return false if no more dat
+// Scan return false if no more date
 func (p *ImageLoader) Scan() bool {
 	select {
 	case e := <-p.err:
-		if e != nil {
+		if e != nil && e != io.EOF {
 			return false
 		}
 	default:
-		return true
+		// pass
 	}
-	return true
+	p.tensorGC()
+	return p.retreiveMinibatch()
 }
 
-func (p *ImageLoader) retreiveMinibatch() {
+func (p *ImageLoader) read() {
 	defer close(p.samples)
 	defer close(p.err)
 	for {
@@ -77,30 +87,29 @@ func (p *ImageLoader) retreiveMinibatch() {
 			p.err <- err
 			break
 		}
-		input := p.trans.Run(m)
-		p.samples <- sample{input.(transforms.ImageFloat), label}
+		image := p.trans1.Run(m)
+		p.samples <- sample{image, label}
 	}
+}
+func (p *ImageLoader) retreiveMinibatch() bool {
+	for i := 0; i < p.mbSize; i++ {
+		sample, ok := <-p.samples
+		if ok {
+			p.inputs = append(p.inputs, p.trans2.Run(sample.data).(torch.Tensor))
+			p.labels = append(p.labels, int64(sample.label))
+		} else {
+			if i == 0 {
+				return false
+			}
+			return true
+		}
+	}
+	return true
 }
 
 // Minibatch returns a minibash with data and label Tensor
 func (p *ImageLoader) Minibatch() (torch.Tensor, torch.Tensor) {
-	images := []torch.Tensor{}
-	labels := []int64{}
-	for i := 0; i < p.mbSize; i++ {
-		sample, ok := <-p.samples
-		if ok {
-			tensorSize := []int64{}
-			for _, v := range sample.img.Shape {
-				tensorSize = append(tensorSize, int64(v))
-			}
-			t := torch.FromBlob(unsafe.Pointer(&sample.img.Array[0]), torch.Float, tensorSize)
-			images = append(images, t.Permute([]int64{2, 0, 1}))
-			labels = append(labels, int64(sample.label))
-		} else {
-			break
-		}
-	}
-	return torch.Stack(images, 0), torch.NewTensor(labels)
+	return torch.Stack(p.inputs, 0), torch.NewTensor(p.labels)
 }
 
 // Err returns the error during the scan process, if there is any. io.EOF is not
@@ -128,4 +137,15 @@ func BuildLabelVocabularyFromTgz(fn string) (map[string]int, error) {
 		}
 	}
 	return vocab, nil
+}
+
+func splitComposeByToTensor(compose *transforms.ComposeTransformer) (*transforms.ComposeTransformer, *transforms.ComposeTransformer) {
+	idx := len(compose.Transforms)
+	for i, trans := range compose.Transforms {
+		if _, ok := trans.(*transforms.ToTensorTransformer); ok {
+			idx = i
+			break
+		}
+	}
+	return transforms.Compose(compose.Transforms[:idx]...), transforms.Compose(compose.Transforms[idx:]...)
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/gob"
 	"flag"
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -77,7 +78,8 @@ func imageNetLoader(fn string, vocab map[string]int, mbSize int) *datasets.Image
 	trans := transforms.Compose(
 		transforms.RandomResizedCrop(224),
 		transforms.RandomHorizontalFlip(0.5),
-		transforms.Normalize([]float32{0.485, 0.456, 0.406}, []float32{0.229, 0.224, 0.225}))
+		transforms.ToTensor(),
+		transforms.Normalize([]float64{0.485, 0.456, 0.406}, []float64{0.229, 0.224, 0.225}))
 
 	loader, e := datasets.NewImageLoader(fn, vocab, trans, mbSize)
 	if e != nil {
@@ -146,9 +148,9 @@ func train(trainFn, testFn, save string, epochs int) {
 		testLoader := imageNetLoader(testFn, vocab, mbSize)
 		iter := 0
 		for trainLoader.Scan() {
-			torch.GC()
 			iter++
 			data, label := trainLoader.Minibatch()
+			fmt.Println(label)
 			optimizer.ZeroGrad()
 			loss, acc1, acc5 := trainOneMinibatch(data.To(device, data.Dtype()), label.To(device, label.Dtype()), model, optimizer)
 			if iter%logInterval == 0 {

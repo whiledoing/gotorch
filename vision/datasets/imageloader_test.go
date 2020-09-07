@@ -1,21 +1,25 @@
 package datasets
 
 import (
+	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	torch "github.com/wangkuiyi/gotorch"
+	tgz "github.com/wangkuiyi/gotorch/tool/tgz"
 	"github.com/wangkuiyi/gotorch/vision/transforms"
 )
 
-/*
 func TestImageTgzLoader(t *testing.T) {
 	a := assert.New(t)
 	d, e := ioutil.TempDir("", "gotorch_image_tgz_loader*")
 	a.NoError(e)
 
 	fn := tgz.SynthesizeTarball(t, d)
-	expectedVocab := map[string]int64{"0": int64(0), "1": int64(1)}
+	expectedVocab := map[string]int{"0": 0, "1": 1}
 	vocab, e := BuildLabelVocabularyFromTgz(fn)
 	a.NoError(e)
 	a.Equal(expectedVocab, vocab)
@@ -47,9 +51,12 @@ func TestImageTgzLoader(t *testing.T) {
 	_, e = BuildLabelVocabularyFromTgz("no file")
 	a.Error(e)
 }
-*/
+
 func TestImageTgzLoaderHeavy(t *testing.T) {
-	trainFn := "/Users/yancey/.cache/imagenet/imagenet_train_shuffle_1k.tgz"
+	if os.Getenv("GOTORCH_TEST_IMAGE_TGZ_PATH") == "" {
+		t.Skip("No GOTORCH_TEST_IMAGE_TGZ_PATH from env, skip test")
+	}
+	trainFn := os.Getenv("GOTORCH_TEST_IMAGE_TGZ_PATH")
 	mbSize := 32
 	vocab, e := BuildLabelVocabularyFromTgz(trainFn)
 	if e != nil {
@@ -58,7 +65,8 @@ func TestImageTgzLoaderHeavy(t *testing.T) {
 	trans := transforms.Compose(
 		transforms.RandomResizedCrop(224),
 		transforms.RandomHorizontalFlip(0.5),
-		transforms.Normalize([]float32{0.485, 0.456, 0.406}, []float32{0.229, 0.224, 0.225}))
+		transforms.ToTensor(),
+		transforms.Normalize([]float64{0.485, 0.456, 0.406}, []float64{0.229, 0.224, 0.225}))
 
 	loader, e := NewImageLoader(trainFn, vocab, trans, mbSize)
 	if e != nil {
@@ -67,7 +75,6 @@ func TestImageTgzLoaderHeavy(t *testing.T) {
 	startTime := time.Now()
 	idx := 0
 	for loader.Scan() {
-		//torch.GC()
 		idx++
 		loader.Minibatch()
 		if idx%10 == 0 {
@@ -75,5 +82,40 @@ func TestImageTgzLoaderHeavy(t *testing.T) {
 			log.Printf("throughput: %f samples/secs", throughput)
 			startTime = time.Now()
 		}
+	}
+	torch.FinishGC()
+}
+
+func TestSplitComposeByToTensor(t *testing.T) {
+	a := assert.New(t)
+	{
+		trans := transforms.Compose(
+			transforms.RandomResizedCrop(224),
+			transforms.RandomHorizontalFlip(0.5),
+			transforms.ToTensor(),
+			transforms.Normalize([]float64{0.485, 0.456, 0.406}, []float64{0.229, 0.224, 0.225}))
+		trans1, trans2 := splitComposeByToTensor(trans)
+		a.Equal(len(trans1.Transforms), 2)
+		_, ok := trans1.Transforms[0].(*transforms.RandomResizedCropTransformer)
+		a.True(ok)
+		_, ok = trans1.Transforms[1].(*transforms.RandomHorizontalFlipTransformer)
+		a.True(ok)
+		a.Equal(len(trans2.Transforms), 2)
+		_, ok = trans2.Transforms[0].(*transforms.ToTensorTransformer)
+		a.True(ok)
+		_, ok = trans2.Transforms[1].(*transforms.NormalizeTransformer)
+		a.True(ok)
+	}
+	{
+		trans := transforms.Compose(
+			transforms.RandomResizedCrop(224),
+			transforms.RandomHorizontalFlip(0.5))
+		trans1, trans2 := splitComposeByToTensor(trans)
+		a.Equal(len(trans1.Transforms), 2)
+		_, ok := trans1.Transforms[0].(*transforms.RandomResizedCropTransformer)
+		a.True(ok)
+		_, ok = trans1.Transforms[1].(*transforms.RandomHorizontalFlipTransformer)
+		a.True(ok)
+		a.Equal(len(trans2.Transforms), 0)
 	}
 }
