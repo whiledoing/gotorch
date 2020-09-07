@@ -1,14 +1,14 @@
 package datasets
 
 import (
-	"io/ioutil"
+	"log"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/wangkuiyi/gotorch/tool/tgz"
 	"github.com/wangkuiyi/gotorch/vision/transforms"
 )
 
+/*
 func TestImageTgzLoader(t *testing.T) {
 	a := assert.New(t)
 	d, e := ioutil.TempDir("", "gotorch_image_tgz_loader*")
@@ -46,4 +46,34 @@ func TestImageTgzLoader(t *testing.T) {
 
 	_, e = BuildLabelVocabularyFromTgz("no file")
 	a.Error(e)
+}
+*/
+func TestImageTgzLoaderHeavy(t *testing.T) {
+	trainFn := "/Users/yancey/.cache/imagenet/imagenet_train_shuffle_1k.tgz"
+	mbSize := 32
+	vocab, e := BuildLabelVocabularyFromTgz(trainFn)
+	if e != nil {
+		log.Fatal(e)
+	}
+	trans := transforms.Compose(
+		transforms.RandomResizedCrop(224),
+		transforms.RandomHorizontalFlip(0.5),
+		transforms.Normalize([]float32{0.485, 0.456, 0.406}, []float32{0.229, 0.224, 0.225}))
+
+	loader, e := NewImageLoader(trainFn, vocab, trans, mbSize)
+	if e != nil {
+		log.Fatal(e)
+	}
+	startTime := time.Now()
+	idx := 0
+	for loader.Scan() {
+		//torch.GC()
+		idx++
+		loader.Minibatch()
+		if idx%10 == 0 {
+			throughput := float64(mbSize*10) / time.Since(startTime).Seconds()
+			log.Printf("throughput: %f samples/secs", throughput)
+			startTime = time.Now()
+		}
+	}
 }
