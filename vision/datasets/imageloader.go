@@ -21,8 +21,8 @@ type ImageLoader struct {
 	vocab   map[string]int
 	samples chan sample
 	err     chan error
-	trans1  *transforms.ComposeTransformer // transforms do not process Tensor
-	trans2  *transforms.ComposeTransformer // transforms process Tensor
+	trans1  *transforms.ComposeTransformer // transforms before `ToTensor`
+	trans2  *transforms.ComposeTransformer // transforms after and include `ToTensor`
 	mbSize  int
 	inputs  []torch.Tensor
 	labels  []int64
@@ -91,6 +91,7 @@ func (p *ImageLoader) read() {
 		p.samples <- sample{image, label}
 	}
 }
+
 func (p *ImageLoader) retreiveMinibatch() bool {
 	for i := 0; i < p.mbSize; i++ {
 		sample, ok := <-p.samples

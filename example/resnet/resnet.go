@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/gob"
 	"flag"
-	"fmt"
 	"log"
 	"math"
 	"os"
@@ -150,7 +149,6 @@ func train(trainFn, testFn, save string, epochs int) {
 		for trainLoader.Scan() {
 			iter++
 			data, label := trainLoader.Minibatch()
-			fmt.Println(label)
 			optimizer.ZeroGrad()
 			loss, acc1, acc5 := trainOneMinibatch(data.To(device, data.Dtype()), label.To(device, label.Dtype()), model, optimizer)
 			if iter%logInterval == 0 {
