@@ -38,7 +38,7 @@ func NewImageLoader(fn string, vocab map[string]int, trans *transforms.ComposeTr
 	m := &ImageLoader{
 		r:       r,
 		vocab:   vocab,
-		samples: make(chan sample, mbSize*4),
+		samples: make(chan sample),
 		err:     make(chan error, 1),
 		trans1:  trans1,
 		trans2:  trans2,
