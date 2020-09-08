@@ -11,7 +11,7 @@ import (
 )
 
 type sample struct {
-	data  interface{}
+	data  image.Image
 	label int
 }
 
@@ -81,14 +81,12 @@ func (p *ImageLoader) read() {
 		}
 		classStr := filepath.Base(filepath.Dir(hdr.Name))
 		label := p.vocab[classStr]
-
 		m, _, err := image.Decode(p.r)
 		if err != nil {
 			p.err <- err
 			break
 		}
-		image := p.trans1.Run(m)
-		p.samples <- sample{image, label}
+		p.samples <- sample{p.trans1.Run(m).(image.Image), label}
 	}
 }
 
