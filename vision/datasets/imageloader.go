@@ -53,7 +53,7 @@ func (p *ImageLoader) tensorGC() {
 	torch.GC()
 }
 
-// Scan return false if no more date
+// Scan return false if no more data
 func (p *ImageLoader) Scan() bool {
 	select {
 	case e := <-p.err:
@@ -61,7 +61,7 @@ func (p *ImageLoader) Scan() bool {
 			return false
 		}
 	default:
-		// pass
+		// no error received
 	}
 	p.tensorGC()
 	return p.retreiveMinibatch()
